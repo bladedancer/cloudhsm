@@ -22,10 +22,8 @@ import lombok.extern.slf4j.Slf4j;
 import org.eclipse.microprofile.config.inject.ConfigProperty;
 
 import javax.crypto.KeyGenerator;
-import javax.crypto.SecretKey;
 import javax.security.auth.callback.Callback;
 import javax.security.auth.callback.CallbackHandler;
-import javax.security.auth.callback.PasswordCallback;
 import javax.security.auth.callback.UnsupportedCallbackException;
 import javax.security.auth.login.LoginException;
 import java.io.IOException;
@@ -35,7 +33,6 @@ import java.security.Key;
 import java.security.NoSuchAlgorithmException;
 import java.security.NoSuchProviderException;
 import java.security.Security;
-import java.text.MessageFormat;
 
 @ApplicationScoped
 @Startup
@@ -114,9 +111,7 @@ public class ProviderService {
 
         KeyGenerator keyGen = KeyGenerator.getInstance("AES", clusterId);
         keyGen.init(aesSpec);
-        SecretKey aesKey = keyGen.generateKey();
-
-        return aesKey;
+        return keyGen.generateKey();
     }
 
     private void registerHsmProvider() {
@@ -142,6 +137,7 @@ public class ProviderService {
                 .withClusterUniqueIdentifier(clusterUniqueId)
                 .withHsmCAFilePath(caFilePath)
                 .withOptions(OptionalParameters.VALIDATE_KEY_AT_INIT, false)
+                .withOptions(OptionalParameters.KEY_AVAILABILITY_CHECK, true)
                 .withServer(server)
                 .build();
 
@@ -164,7 +160,7 @@ public class ProviderService {
 
         ApplicationCallBackHandler loginHandler = new ApplicationCallBackHandler(UserType.CRYPTO_USER, user, password);
         provider.login(null, loginHandler);
-        log.info(MessageFormat.format("Login successful on provider {0} with user {1}!", providerName, user));
+        log.info("Login successful on provider {} with user {}!", providerName, user);
     }
 
     @RequiredArgsConstructor
@@ -183,9 +179,6 @@ public class ProviderService {
                         throw new IOException(e);
                     }
                 }
-//                if (callback instanceof PasswordCallback pc) {
-//                    pc.setPassword(cloudhsmPin.toCharArray());
-//                }
             }
         }
     }
