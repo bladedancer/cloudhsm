@@ -1,6 +1,5 @@
 package com.matthews.poc.cloudhsm;
 
-import com.amazonaws.cloudhsm.jce.jni.AuthenticationStrategy;
 import com.amazonaws.cloudhsm.jce.jni.UserType;
 import com.amazonaws.cloudhsm.jce.jni.exception.AddAttributeException;
 import com.amazonaws.cloudhsm.jce.jni.exception.ProviderInitializationException;
@@ -12,27 +11,31 @@ import com.amazonaws.cloudhsm.jce.provider.CloudHsmServer;
 import com.amazonaws.cloudhsm.jce.provider.OptionalParameters;
 import com.amazonaws.cloudhsm.jce.provider.attributes.KeyAttribute;
 import com.amazonaws.cloudhsm.jce.provider.attributes.KeyAttributesMap;
-import com.amazonaws.cloudhsm.jce.provider.authentication.AuthenticationStrategyCallback;
 import io.quarkus.runtime.Startup;
 import jakarta.annotation.PostConstruct;
 import jakarta.annotation.PreDestroy;
 import jakarta.enterprise.context.ApplicationScoped;
-import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.eclipse.microprofile.config.inject.ConfigProperty;
 
 import javax.crypto.KeyGenerator;
-import javax.security.auth.callback.Callback;
-import javax.security.auth.callback.CallbackHandler;
-import javax.security.auth.callback.UnsupportedCallbackException;
 import javax.security.auth.login.LoginException;
+import java.io.FileInputStream;
+import java.io.FileNotFoundException;
 import java.io.IOException;
 import java.security.AuthProvider;
 import java.security.InvalidAlgorithmParameterException;
 import java.security.Key;
+import java.security.KeyStore;
+import java.security.KeyStoreException;
 import java.security.NoSuchAlgorithmException;
 import java.security.NoSuchProviderException;
 import java.security.Security;
+import java.security.UnrecoverableKeyException;
+import java.security.cert.CertificateException;
+import java.util.Collections;
+import java.util.Enumeration;
+import java.util.List;
 
 @ApplicationScoped
 @Startup
@@ -114,6 +117,27 @@ public class ProviderService {
         return keyGen.generateKey();
     }
 
+    public List<String> listKeys()
+            throws Exception {
+        final KeyStore keyStore = KeyStore.getInstance(CloudHsmProvider.PROVIDER_NAME);
+        keyStore.load(null, null);
+
+        if (keyStore.size() == 0) {
+            log.warn("Keystore is empty.");
+            return List.of();
+        }
+
+        return Collections.list(keyStore.aliases());
+    }
+
+    public Key getKeyByLabel(String label)
+            throws CertificateException, IOException, NoSuchAlgorithmException, KeyStoreException,
+            UnrecoverableKeyException {
+        KeyStore keystore = KeyStore.getInstance(CloudHsmProvider.CLOUDHSM_KEYSTORE_TYPE);
+        keystore.load(null, null);
+        return keystore.getKey(label, null);
+    }
+
     private void registerHsmProvider() {
         try {
             CloudHsmProvider provider = createProvider(clusterId, cafile, ip, port);
@@ -142,9 +166,9 @@ public class ProviderService {
                 .build();
 
         final CloudHsmLoggingConfig loggingConfig = CloudHsmLoggingConfig.builder()
-//                .withLogFile("/opt/cloudhsm/run/cloudhsm-jce.log")
+//                .withLogFile("/tmp/cloudhsm-jce.log")
 //                .withLogInterval("daily")
-//                .withLogType("file")
+                .withLogType("term")
                 .withLogLevel("debug")
                 .build();
 
@@ -158,28 +182,8 @@ public class ProviderService {
     public void login(String user, String password, String providerName) throws LoginException {
         AuthProvider provider = (AuthProvider) Security.getProvider(providerName);
 
-        ApplicationCallBackHandler loginHandler = new ApplicationCallBackHandler(UserType.CRYPTO_USER, user, password);
+        ApplicationCallbackHandler loginHandler = new ApplicationCallbackHandler(UserType.CRYPTO_USER, user, password);
         provider.login(null, loginHandler);
         log.info("Login successful on provider {} with user {}!", providerName, user);
-    }
-
-    @RequiredArgsConstructor
-    static class ApplicationCallBackHandler implements CallbackHandler {
-        private final UserType userType;
-        private final String username;
-        private final String password;
-
-        @Override
-        public void handle(Callback[] callbacks) throws IOException, UnsupportedCallbackException {
-            for (Callback callback : callbacks) {
-                if (callback instanceof AuthenticationStrategyCallback asc) {
-                    try {
-                        asc.setAuthenticationStrategy(AuthenticationStrategy.createUsernamePasswordStrategy(userType, username, password.toCharArray()));
-                    } catch (Exception e) {
-                        throw new IOException(e);
-                    }
-                }
-            }
-        }
     }
 }
