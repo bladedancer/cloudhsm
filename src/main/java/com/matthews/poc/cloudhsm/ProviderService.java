@@ -20,8 +20,6 @@ import org.eclipse.microprofile.config.inject.ConfigProperty;
 
 import javax.crypto.KeyGenerator;
 import javax.security.auth.login.LoginException;
-import java.io.FileInputStream;
-import java.io.FileNotFoundException;
 import java.io.IOException;
 import java.security.AuthProvider;
 import java.security.InvalidAlgorithmParameterException;
@@ -34,7 +32,6 @@ import java.security.Security;
 import java.security.UnrecoverableKeyException;
 import java.security.cert.CertificateException;
 import java.util.Collections;
-import java.util.Enumeration;
 import java.util.List;
 
 @ApplicationScoped
@@ -106,6 +103,7 @@ public class ProviderService {
             throws InvalidAlgorithmParameterException, NoSuchAlgorithmException,
             NoSuchProviderException, AddAttributeException {
 
+        // Validate key size
         // Create an Aes keygen Algorithm parameter spec using KeyAttributesMap
         final KeyAttributesMap aesSpec = new KeyAttributesMap();
         aesSpec.putAll(aesSpecKeyAttributes);
@@ -119,7 +117,7 @@ public class ProviderService {
 
     public List<String> listKeys()
             throws Exception {
-        final KeyStore keyStore = KeyStore.getInstance(CloudHsmProvider.PROVIDER_NAME);
+        final KeyStore keyStore = KeyStore.getInstance(CloudHsmProvider.CLOUDHSM_KEYSTORE_TYPE);
         keyStore.load(null, null);
 
         if (keyStore.size() == 0) {
@@ -166,8 +164,6 @@ public class ProviderService {
                 .build();
 
         final CloudHsmLoggingConfig loggingConfig = CloudHsmLoggingConfig.builder()
-//                .withLogFile("/tmp/cloudhsm-jce.log")
-//                .withLogInterval("daily")
                 .withLogType("term")
                 .withLogLevel("debug")
                 .build();

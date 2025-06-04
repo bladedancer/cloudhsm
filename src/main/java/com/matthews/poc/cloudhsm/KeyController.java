@@ -26,6 +26,7 @@ public class KeyController {
         if (key == null) {
             return Response.status(Response.Status.NOT_FOUND).build();
         }
+
         return Response.ok(key).build();
     }
 
