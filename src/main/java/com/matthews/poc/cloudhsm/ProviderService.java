@@ -19,10 +19,13 @@ import lombok.extern.slf4j.Slf4j;
 import org.eclipse.microprofile.config.inject.ConfigProperty;
 
 import javax.crypto.KeyGenerator;
+import javax.crypto.Mac;
 import javax.security.auth.login.LoginException;
 import java.io.IOException;
+import java.nio.charset.StandardCharsets;
 import java.security.AuthProvider;
 import java.security.InvalidAlgorithmParameterException;
+import java.security.InvalidKeyException;
 import java.security.Key;
 import java.security.KeyStore;
 import java.security.KeyStoreException;
@@ -103,12 +106,12 @@ public class ProviderService {
             throws InvalidAlgorithmParameterException, NoSuchAlgorithmException,
             NoSuchProviderException, AddAttributeException {
 
-        // Validate key size
         // Create an Aes keygen Algorithm parameter spec using KeyAttributesMap
         final KeyAttributesMap aesSpec = new KeyAttributesMap();
         aesSpec.putAll(aesSpecKeyAttributes);
         aesSpec.put(KeyAttribute.LABEL, keyLabel);
         aesSpec.put(KeyAttribute.SIZE, keySizeInBits);
+        aesSpec.put(KeyAttribute.TOKEN, true);
 
         KeyGenerator keyGen = KeyGenerator.getInstance("AES", clusterId);
         keyGen.init(aesSpec);
@@ -181,5 +184,27 @@ public class ProviderService {
         ApplicationCallbackHandler loginHandler = new ApplicationCallbackHandler(UserType.CRYPTO_USER, user, password);
         provider.login(null, loginHandler);
         log.info("Login successful on provider {} with user {}!", providerName, user);
+    }
+
+    public String signPayload(String payload, String keyLabel, String algorithm) throws CertificateException, IOException, NoSuchAlgorithmException, KeyStoreException,
+            UnrecoverableKeyException, InvalidKeyException, NoSuchProviderException {
+        byte[] data = payload.getBytes(StandardCharsets.UTF_8);
+        Mac mac = Mac.getInstance(algorithm, clusterId);
+        mac.init(getKeyByLabel(keyLabel));
+        return bytesToHex(mac.doFinal(data));
+    }
+
+    public boolean verifySignature(String payload,String keyLabel, String algorithm, String signature) throws IOException, NoSuchAlgorithmException, KeyStoreException,
+            UnrecoverableKeyException, InvalidKeyException, NoSuchProviderException, CertificateException {
+        String expectedSignature = signPayload(payload, keyLabel, algorithm);
+        return expectedSignature.equals(signature);
+    }
+
+    private static String bytesToHex(byte[] bytes) {
+        StringBuilder sb = new StringBuilder();
+        for (byte b : bytes) {
+            sb.append(String.format("%02x", b));
+        }
+        return sb.toString();
     }
 }
