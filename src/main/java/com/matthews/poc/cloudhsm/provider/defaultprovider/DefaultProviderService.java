@@ -1,4 +1,4 @@
-package com.matthews.poc.cloudhsm;
+package com.matthews.poc.cloudhsm.provider.defaultprovider;
 
 import com.amazonaws.cloudhsm.jce.jni.UserType;
 import com.amazonaws.cloudhsm.jce.jni.exception.AddAttributeException;
@@ -11,10 +11,13 @@ import com.amazonaws.cloudhsm.jce.provider.CloudHsmServer;
 import com.amazonaws.cloudhsm.jce.provider.OptionalParameters;
 import com.amazonaws.cloudhsm.jce.provider.attributes.KeyAttribute;
 import com.amazonaws.cloudhsm.jce.provider.attributes.KeyAttributesMap;
-import io.quarkus.runtime.Startup;
+import com.matthews.poc.cloudhsm.controller.ApplicationCallbackHandler;
+import com.matthews.poc.cloudhsm.api.ProviderService;
+import com.matthews.poc.cloudhsm.api.Session;
 import jakarta.annotation.PostConstruct;
 import jakarta.annotation.PreDestroy;
 import jakarta.enterprise.context.ApplicationScoped;
+import jakarta.inject.Named;
 import lombok.extern.slf4j.Slf4j;
 import org.eclipse.microprofile.config.inject.ConfigProperty;
 
@@ -38,9 +41,10 @@ import java.util.Collections;
 import java.util.List;
 
 @ApplicationScoped
-@Startup
+@Named("DefaultProviderService")
+//@Startup
 @Slf4j
-public class ProviderService {
+public class DefaultProviderService implements ProviderService {
     @ConfigProperty(name = "cloudhsm.clusterid")
     String clusterId;
 
@@ -63,7 +67,7 @@ public class ProviderService {
     public void init() throws Exception {
         log.info("Initializing CloudHSM provider service...");
         registerHsmProvider();
-        login(user, password, clusterId);
+        internalLogin(user, password, clusterId);
     }
 
     @PreDestroy
@@ -83,16 +87,34 @@ public class ProviderService {
         }
     }
 
+    public Session login(String user, String password) throws LoginException {
+        log.info("Using config based provider - no login");
+        return new DefaultSession(clusterId);
+    }
+
+    public void logout(Session session) throws Exception {
+        AuthProvider provider = (AuthProvider) Security.getProvider(clusterId);
+        provider.logout();
+    }
+
+    private void internalLogin(String user, String password, String clusterId) throws LoginException {
+        AuthProvider provider = (AuthProvider) Security.getProvider(clusterId);
+
+        ApplicationCallbackHandler loginHandler = new ApplicationCallbackHandler(UserType.CRYPTO_USER, user, password);
+        provider.login(null, loginHandler);
+        log.info("Login successful on provider {} with user {}!", clusterId, user);
+    }
+
     /**
      * Generate an AES key with a specific label and keysize.
      *
      * @param keySizeInBits Size of the key.
      * @param keyLabel Label to associate with the key.
      */
-    public Key generateAESKey(int keySizeInBits, String keyLabel)
+    public Key generateAESKey(Session session, int keySizeInBits, String keyLabel)
             throws InvalidAlgorithmParameterException, NoSuchAlgorithmException,
             NoSuchProviderException, AddAttributeException {
-        return generateAESKey(keySizeInBits, keyLabel, new KeyAttributesMap());
+        return generateAESKey(session, keySizeInBits, keyLabel, new KeyAttributesMap());
     }
 
     /**
@@ -102,7 +124,7 @@ public class ProviderService {
      * @param keyLabel Label to associate with the key.
      */
     public Key generateAESKey(
-            int keySizeInBits, String keyLabel, KeyAttributesMap aesSpecKeyAttributes)
+            Session session, int keySizeInBits, String keyLabel, KeyAttributesMap aesSpecKeyAttributes)
             throws InvalidAlgorithmParameterException, NoSuchAlgorithmException,
             NoSuchProviderException, AddAttributeException {
 
@@ -118,7 +140,7 @@ public class ProviderService {
         return keyGen.generateKey();
     }
 
-    public List<String> listKeys()
+    public List<String> listKeys(Session session)
             throws Exception {
         final KeyStore keyStore = KeyStore.getInstance(CloudHsmProvider.CLOUDHSM_KEYSTORE_TYPE);
         keyStore.load(null, null);
@@ -131,12 +153,34 @@ public class ProviderService {
         return Collections.list(keyStore.aliases());
     }
 
-    public Key getKeyByLabel(String label)
+    public Key getKeyByLabel(Session session, String label)
             throws CertificateException, IOException, NoSuchAlgorithmException, KeyStoreException,
             UnrecoverableKeyException {
         KeyStore keystore = KeyStore.getInstance(CloudHsmProvider.CLOUDHSM_KEYSTORE_TYPE);
         keystore.load(null, null);
         return keystore.getKey(label, null);
+    }
+
+    public String signPayload(Session session, String payload, String keyLabel, String algorithm) throws CertificateException, IOException, NoSuchAlgorithmException, KeyStoreException,
+            UnrecoverableKeyException, InvalidKeyException, NoSuchProviderException {
+        byte[] data = payload.getBytes(StandardCharsets.UTF_8);
+        Mac mac = Mac.getInstance(algorithm, clusterId);
+        mac.init(getKeyByLabel(session, keyLabel));
+        return bytesToHex(mac.doFinal(data));
+    }
+
+    public boolean verifySignature(Session session, String payload,String keyLabel, String algorithm, String signature) throws IOException, NoSuchAlgorithmException, KeyStoreException,
+            UnrecoverableKeyException, InvalidKeyException, NoSuchProviderException, CertificateException {
+        String expectedSignature = signPayload(session, payload, keyLabel, algorithm);
+        return expectedSignature.equals(signature);
+    }
+
+    private static String bytesToHex(byte[] bytes) {
+        StringBuilder sb = new StringBuilder();
+        for (byte b : bytes) {
+            sb.append(String.format("%02x", b));
+        }
+        return sb.toString();
     }
 
     private void registerHsmProvider() {
@@ -178,33 +222,4 @@ public class ProviderService {
         return new CloudHsmProvider(testConfig);
     }
 
-    public void login(String user, String password, String providerName) throws LoginException {
-        AuthProvider provider = (AuthProvider) Security.getProvider(providerName);
-
-        ApplicationCallbackHandler loginHandler = new ApplicationCallbackHandler(UserType.CRYPTO_USER, user, password);
-        provider.login(null, loginHandler);
-        log.info("Login successful on provider {} with user {}!", providerName, user);
-    }
-
-    public String signPayload(String payload, String keyLabel, String algorithm) throws CertificateException, IOException, NoSuchAlgorithmException, KeyStoreException,
-            UnrecoverableKeyException, InvalidKeyException, NoSuchProviderException {
-        byte[] data = payload.getBytes(StandardCharsets.UTF_8);
-        Mac mac = Mac.getInstance(algorithm, clusterId);
-        mac.init(getKeyByLabel(keyLabel));
-        return bytesToHex(mac.doFinal(data));
-    }
-
-    public boolean verifySignature(String payload,String keyLabel, String algorithm, String signature) throws IOException, NoSuchAlgorithmException, KeyStoreException,
-            UnrecoverableKeyException, InvalidKeyException, NoSuchProviderException, CertificateException {
-        String expectedSignature = signPayload(payload, keyLabel, algorithm);
-        return expectedSignature.equals(signature);
-    }
-
-    private static String bytesToHex(byte[] bytes) {
-        StringBuilder sb = new StringBuilder();
-        for (byte b : bytes) {
-            sb.append(String.format("%02x", b));
-        }
-        return sb.toString();
-    }
 }

@@ -40,3 +40,4 @@ build/
 *.pem
 jce/*
 .env
+tunnel.sh

@@ -1,4 +1,4 @@
-package com.matthews.poc.cloudhsm;
+package com.matthews.poc.cloudhsm.controller;
 
 import com.amazonaws.cloudhsm.jce.jni.AuthenticationStrategy;
 import com.amazonaws.cloudhsm.jce.jni.UserType;
