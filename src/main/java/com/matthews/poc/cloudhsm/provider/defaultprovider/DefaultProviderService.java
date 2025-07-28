@@ -23,6 +23,7 @@ import org.eclipse.microprofile.config.inject.ConfigProperty;
 
 import javax.crypto.KeyGenerator;
 import javax.crypto.Mac;
+import javax.net.ssl.SSLContext;
 import javax.security.auth.login.LoginException;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
@@ -95,6 +96,11 @@ public class DefaultProviderService implements ProviderService {
     public void logout(Session session) throws Exception {
         AuthProvider provider = (AuthProvider) Security.getProvider(clusterId);
         provider.logout();
+    }
+
+    @Override
+    public SSLContext getSSLContext(Session session, String alias) throws Exception {
+        throw new IllegalAccessException("not implemented in DefaultProviderService");
     }
 
     private void internalLogin(String user, String password, String clusterId) throws LoginException {

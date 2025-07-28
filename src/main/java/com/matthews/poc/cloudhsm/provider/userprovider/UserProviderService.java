@@ -11,9 +11,9 @@ import com.amazonaws.cloudhsm.jce.provider.CloudHsmServer;
 import com.amazonaws.cloudhsm.jce.provider.OptionalParameters;
 import com.amazonaws.cloudhsm.jce.provider.attributes.KeyAttribute;
 import com.amazonaws.cloudhsm.jce.provider.attributes.KeyAttributesMap;
-import com.matthews.poc.cloudhsm.controller.ApplicationCallbackHandler;
 import com.matthews.poc.cloudhsm.api.ProviderService;
 import com.matthews.poc.cloudhsm.api.Session;
+import com.matthews.poc.cloudhsm.controller.ApplicationCallbackHandler;
 import io.quarkus.runtime.Startup;
 import jakarta.annotation.PostConstruct;
 import jakarta.annotation.PreDestroy;
@@ -24,8 +24,15 @@ import org.eclipse.microprofile.config.inject.ConfigProperty;
 
 import javax.crypto.KeyGenerator;
 import javax.crypto.Mac;
+import javax.net.ssl.KeyManager;
+import javax.net.ssl.SSLContext;
+import javax.net.ssl.TrustManager;
+import javax.net.ssl.X509ExtendedKeyManager;
+import javax.net.ssl.X509TrustManager;
 import javax.security.auth.login.LoginException;
+import java.io.FileInputStream;
 import java.io.IOException;
+import java.net.Socket;
 import java.nio.charset.StandardCharsets;
 import java.security.InvalidAlgorithmParameterException;
 import java.security.InvalidKeyException;
@@ -34,8 +41,13 @@ import java.security.KeyStore;
 import java.security.KeyStoreException;
 import java.security.NoSuchAlgorithmException;
 import java.security.NoSuchProviderException;
+import java.security.Principal;
+import java.security.PrivateKey;
+import java.security.SecureRandom;
 import java.security.UnrecoverableKeyException;
 import java.security.cert.CertificateException;
+import java.security.cert.CertificateFactory;
+import java.security.cert.X509Certificate;
 import java.util.Collections;
 import java.util.List;
 import java.util.Map;
@@ -108,6 +120,89 @@ public class UserProviderService implements ProviderService {
         } else {
             log.warn("No provider found for user {}.", userSession.user());
         }
+    }
+
+    @Override
+    public SSLContext getSSLContext(Session session, String alias) throws Exception {
+        UserSession userSession = (UserSession) session;
+        CloudHsmProvider provider = getProvider(userSession);
+
+        // Load the key
+        final KeyStore keyStore = KeyStore.getInstance(CloudHsmProvider.CLOUDHSM_KEYSTORE_TYPE, provider);
+        keyStore.load(null, null);
+        Key key = keyStore.getKey(alias, null);
+
+        if (key == null) {
+            throw new KeyStoreException("No key found in the keystore with label " + alias);
+        }
+
+        // Load the certificate
+        CertificateFactory certFactory = CertificateFactory.getInstance("X.509");
+        java.security.cert.Certificate certificate;
+        try (FileInputStream fis = new FileInputStream("./" + alias + ".crt")) { // who needs security
+            certificate = certFactory.generateCertificate(fis);
+        }
+
+        // Cant' do this: Create a KeyStore and add the key and certificate
+        // keyStore.setKeyEntry(alias, key, null, new java.security.cert.Certificate[]{certificate});
+        // KeyManagerFactory kmf = KeyManagerFactory.getInstance(KeyManagerFactory.getDefaultAlgorithm());
+        // kmf.init(keyStore, null);
+        // So do this instead:
+        KeyManager[] kms = new KeyManager[]{
+                new X509ExtendedKeyManager() {
+                    @Override
+                    public String[] getClientAliases(String keyType, Principal[] issuers) {
+                        return new String[]{alias};
+                    }
+
+                    @Override
+                    public String chooseClientAlias(String[] keyType, Principal[] issuers, Socket socket) {
+                        return alias;
+                    }
+
+                    @Override
+                    public String[] getServerAliases(String keyType, Principal[] issuers) {
+                        return null;
+                    }
+
+                    @Override
+                    public String chooseServerAlias(String keyType, Principal[] issuers, Socket socket) {
+                        return null;
+                    }
+
+                    @Override
+                    public X509Certificate[] getCertificateChain(String alias) {
+                        return new X509Certificate[]{(X509Certificate) certificate};
+                    }
+
+                    @Override
+                    public PrivateKey getPrivateKey(String alias) {
+                        return (PrivateKey) key;
+                    }
+                }
+        };
+
+        // Just because I'm lazy - permissive trust manager
+        TrustManager[] tms = new TrustManager[]{new X509TrustManager() {
+            public X509Certificate[] getAcceptedIssuers() {
+                return null;
+            }
+
+            public void checkClientTrusted(X509Certificate[] certs,
+                                           String authType) {
+            }
+
+            public void checkServerTrusted(X509Certificate[] certs,
+                                           String authType) {
+            }
+        }};
+
+
+        // NOT CLOUD HSM PROVIDER
+        SSLContext sslContext = SSLContext.getInstance("TLSv1.3");
+        sslContext.init(kms, tms, new SecureRandom());
+
+        return sslContext;
     }
 
     public Key generateAESKey(Session session, int keySizeInBits, String keyLabel) throws IllegalStateException, AddAttributeException, InvalidAlgorithmParameterException, NoSuchAlgorithmException {

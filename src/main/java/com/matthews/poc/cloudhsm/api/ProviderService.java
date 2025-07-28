@@ -3,6 +3,7 @@ package com.matthews.poc.cloudhsm.api;
 import com.amazonaws.cloudhsm.jce.jni.exception.AddAttributeException;
 import com.amazonaws.cloudhsm.jce.provider.attributes.KeyAttributesMap;
 
+import javax.net.ssl.SSLContext;
 import java.io.IOException;
 import java.security.InvalidAlgorithmParameterException;
 import java.security.InvalidKeyException;
@@ -30,6 +31,14 @@ public interface ProviderService {
     Session login(String user, String password) throws Exception;
 
     void logout(Session session) throws Exception;
+
+    /**
+     * Get the SSL Context for the given session.
+     * @param session
+     * @return
+     * @throws Exception
+     */
+    SSLContext getSSLContext(Session session, String alias) throws Exception;
 
     /**
      * Generates an AES key with the specified size and label.
