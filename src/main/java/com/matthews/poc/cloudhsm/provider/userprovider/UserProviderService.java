@@ -26,6 +26,7 @@ import javax.crypto.KeyGenerator;
 import javax.crypto.Mac;
 import javax.net.ssl.KeyManager;
 import javax.net.ssl.SSLContext;
+import javax.net.ssl.SSLEngine;
 import javax.net.ssl.TrustManager;
 import javax.net.ssl.X509ExtendedKeyManager;
 import javax.net.ssl.X509TrustManager;
@@ -139,7 +140,7 @@ public class UserProviderService implements ProviderService {
         // Load the certificate
         CertificateFactory certFactory = CertificateFactory.getInstance("X.509");
         java.security.cert.Certificate certificate;
-        try (FileInputStream fis = new FileInputStream("./" + alias + ".crt")) { // who needs security
+        try (FileInputStream fis = new FileInputStream("./" + alias.replace("-key", "") + ".crt")) { // who needs security
             certificate = certFactory.generateCertificate(fis);
         }
 
@@ -150,6 +151,13 @@ public class UserProviderService implements ProviderService {
         // So do this instead:
         KeyManager[] kms = new KeyManager[]{
                 new X509ExtendedKeyManager() {
+                    @Override
+                    public String chooseEngineClientAlias(String[] keyType,
+                                                          Principal[] issuers, SSLEngine engine) {
+                        return alias;
+                    }
+
+
                     @Override
                     public String[] getClientAliases(String keyType, Principal[] issuers) {
                         return new String[]{alias};
@@ -199,7 +207,7 @@ public class UserProviderService implements ProviderService {
 
 
         // NOT CLOUD HSM PROVIDER
-        SSLContext sslContext = SSLContext.getInstance("TLSv1.3");
+        SSLContext sslContext = SSLContext.getInstance("TLSv1.2");
         sslContext.init(kms, tms, new SecureRandom());
 
         return sslContext;
