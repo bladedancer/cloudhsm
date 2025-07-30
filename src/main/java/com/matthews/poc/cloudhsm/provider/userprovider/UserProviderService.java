@@ -11,6 +11,10 @@ import com.amazonaws.cloudhsm.jce.provider.CloudHsmServer;
 import com.amazonaws.cloudhsm.jce.provider.OptionalParameters;
 import com.amazonaws.cloudhsm.jce.provider.attributes.KeyAttribute;
 import com.amazonaws.cloudhsm.jce.provider.attributes.KeyAttributesMap;
+import com.amazonaws.cloudhsm.jce.provider.attributes.KeyAttributesMapBuilder;
+import com.amazonaws.cloudhsm.jce.provider.attributes.KeyPairAttributesMap;
+import com.amazonaws.cloudhsm.jce.provider.attributes.KeyPairAttributesMapBuilder;
+import com.amazonaws.cloudhsm.jce.provider.attributes.KeyType;
 import com.matthews.poc.cloudhsm.api.ProviderService;
 import com.matthews.poc.cloudhsm.api.Session;
 import com.matthews.poc.cloudhsm.controller.ApplicationCallbackHandler;
@@ -30,14 +34,21 @@ import javax.net.ssl.SSLEngine;
 import javax.net.ssl.TrustManager;
 import javax.net.ssl.X509ExtendedKeyManager;
 import javax.net.ssl.X509TrustManager;
+import javax.security.auth.callback.Callback;
 import javax.security.auth.login.LoginException;
 import java.io.FileInputStream;
 import java.io.IOException;
+import java.math.BigInteger;
 import java.net.Socket;
 import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.security.AuthProvider;
 import java.security.InvalidAlgorithmParameterException;
 import java.security.InvalidKeyException;
 import java.security.Key;
+import java.security.KeyPair;
+import java.security.KeyPairGenerator;
 import java.security.KeyStore;
 import java.security.KeyStoreException;
 import java.security.NoSuchAlgorithmException;
@@ -45,6 +56,7 @@ import java.security.NoSuchProviderException;
 import java.security.Principal;
 import java.security.PrivateKey;
 import java.security.SecureRandom;
+import java.security.Security;
 import java.security.UnrecoverableKeyException;
 import java.security.cert.CertificateException;
 import java.security.cert.CertificateFactory;
@@ -72,6 +84,9 @@ public class UserProviderService implements ProviderService {
 
     @ConfigProperty(name = "cloudhsm.port")
     Integer port;
+
+    @ConfigProperty(name = "pkcs11ConfigPath")
+    String pkcs11ConfigPath;
 
     @PostConstruct
     public void init() {
@@ -125,12 +140,26 @@ public class UserProviderService implements ProviderService {
 
     @Override
     public SSLContext getSSLContext(Session session, String alias) throws Exception {
-        UserSession userSession = (UserSession) session;
-        CloudHsmProvider provider = getProvider(userSession);
+        // This should be cached but for now this will do.
+        String pkcs11Config = String.format("name=CloudHSM\nlibrary=%s", pkcs11ConfigPath);
+        Path tempFile = Files.createTempFile("pkcs11Config", ".conf");
+        Files.writeString(tempFile, pkcs11Config);
+
+        AuthProvider provider = (AuthProvider) Security.getProvider("SunPKCS11").configure(tempFile.toString());
+
+        provider.login(null, callbacks -> {
+            for (Callback callback : callbacks) {
+                if (callback instanceof javax.security.auth.callback.PasswordCallback) {
+                    ((javax.security.auth.callback.PasswordCallback) callback).setPassword("gmtest:Axway123$".toCharArray());
+                    break;
+                }
+            }
+        });
 
         // Load the key
-        final KeyStore keyStore = KeyStore.getInstance(CloudHsmProvider.CLOUDHSM_KEYSTORE_TYPE, provider);
+        final KeyStore keyStore = KeyStore.getInstance("PKCS11", provider);
         keyStore.load(null, null);
+        List<String> aliases = Collections.list(keyStore.aliases());
         Key key = keyStore.getKey(alias, null);
 
         if (key == null) {
@@ -144,11 +173,6 @@ public class UserProviderService implements ProviderService {
             certificate = certFactory.generateCertificate(fis);
         }
 
-        // Cant' do this: Create a KeyStore and add the key and certificate
-        // keyStore.setKeyEntry(alias, key, null, new java.security.cert.Certificate[]{certificate});
-        // KeyManagerFactory kmf = KeyManagerFactory.getInstance(KeyManagerFactory.getDefaultAlgorithm());
-        // kmf.init(keyStore, null);
-        // So do this instead:
         KeyManager[] kms = new KeyManager[]{
                 new X509ExtendedKeyManager() {
                     @Override
@@ -156,7 +180,6 @@ public class UserProviderService implements ProviderService {
                                                           Principal[] issuers, SSLEngine engine) {
                         return alias;
                     }
-
 
                     @Override
                     public String[] getClientAliases(String keyType, Principal[] issuers) {
@@ -206,11 +229,46 @@ public class UserProviderService implements ProviderService {
         }};
 
 
-        // NOT CLOUD HSM PROVIDER
-        SSLContext sslContext = SSLContext.getInstance("TLSv1.2");
+        // Doesn't look like we can do rsa_pss_rsae_sha256 so no TLSv1.3????
+        SSLContext sslContext = SSLContext.getInstance("TLSv1.3", provider);
         sslContext.init(kms, tms, new SecureRandom());
 
         return sslContext;
+    }
+
+    public KeyPair generateRSAKey(Session session, int keySizeInBits, String keyLabel) throws AddAttributeException, InvalidAlgorithmParameterException, NoSuchAlgorithmException {
+        UserSession userSession = (UserSession) session;
+        CloudHsmProvider provider = getProvider(userSession);
+
+        KeyPairAttributesMap rsaSpec = (new KeyPairAttributesMapBuilder())
+                .withPublic(
+                        (new KeyAttributesMapBuilder())
+                                .put(KeyAttribute.TOKEN, true)
+                                .put(KeyAttribute.ENCRYPT, true)
+                                .put(KeyAttribute.VERIFY, true)
+                                .put(KeyAttribute.WRAP, true)
+                                .put(KeyAttribute.LABEL, keyLabel + "-public")
+                                .put(KeyAttribute.MODULUS_BITS, keySizeInBits)
+                                .put(KeyAttribute.KEY_TYPE, KeyType.RSA)
+                                .put(KeyAttribute.PUBLIC_EXPONENT, BigInteger.valueOf(65537).toByteArray())
+                                .build())
+                .withPrivate(
+                        (new KeyAttributesMapBuilder())
+                                .put(KeyAttribute.TOKEN, true)
+                                .put(KeyAttribute.PRIVATE, true)
+                                .put(KeyAttribute.EXTRACTABLE, true)
+                                .put(KeyAttribute.DECRYPT, true)
+                                .put(KeyAttribute.SIGN, true)
+                                .put(KeyAttribute.UNWRAP, true)
+                                .put(KeyAttribute.LABEL, keyLabel)
+                                .put(KeyAttribute.KEY_TYPE, KeyType.RSA)
+                                .build())
+                .build();
+
+        KeyPairGenerator generator = KeyPairGenerator.getInstance("RSA", provider);
+        generator.initialize(rsaSpec);
+
+        return generator.generateKeyPair();
     }
 
     public Key generateAESKey(Session session, int keySizeInBits, String keyLabel) throws IllegalStateException, AddAttributeException, InvalidAlgorithmParameterException, NoSuchAlgorithmException {

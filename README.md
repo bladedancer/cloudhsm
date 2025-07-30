@@ -39,7 +39,10 @@ openssl req -engine cloudhsm -new -key demo.pem -out demo.csr -sha256 -subj "/CN
 openssl x509 -engine cloudhsm -req -days 365 -in demo.csr -signkey demo.pem -out demo.crt -sha256
 ```
 
-The problem with this approach is that I can't set a label...
+Set the label on the generated keys using the cli:
+```bash
+aws-cloudhsm > key set-attribute  --filter key-reference=0x00000000000826a8 --name label --value demo-key
+```
 
 
 ```bash
@@ -49,7 +52,8 @@ aws-cloudhsm > key generate-asymmetric-pair rsa --public-label example --private
  --modulus-size-bits 2048 --public-exponent 65537
 aws-cloudhsm > key generate-file --encoding reference-pem --path example.key --filter attr.label=example-key
 openssl req -engine cloudhsm -new -key example.key -out example.csr
-openssl x509 -engine cloudhsm -req -days 365 -in example.csr -signkey example.key -out example.crt
+openssl x509 -engine cloudhsm -req -days 365 -in example.csr -signkey example.key -out example.crt -sigopt rsa_pss_saltlen:digest
 ````
 
+openssl req -new -x509 -key example.key -out example.csr -days 365 -sha256 -sigopt rsa_pss_saltlen:digest -addext "subjectAltName=DNS:yourdomain.com" -set_serial 1234
 Note it's possible to use the public key from AWS but that requires using the PKCS11 engine and I didn't bother.

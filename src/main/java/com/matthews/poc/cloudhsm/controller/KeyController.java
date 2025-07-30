@@ -45,6 +45,6 @@ public class KeyController {
         if (key == null) {
             return Response.status(Response.Status.BAD_REQUEST).build();
         }
-        return Response.ok(key).build();
+        return Response.ok(key.getAlgorithm()).build();
     }
 }
