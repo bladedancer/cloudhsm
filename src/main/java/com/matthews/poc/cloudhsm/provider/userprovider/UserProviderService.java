@@ -25,12 +25,16 @@ import org.eclipse.microprofile.config.inject.ConfigProperty;
 
 import javax.crypto.KeyGenerator;
 import javax.crypto.Mac;
+import javax.net.ssl.KeyManager;
 import javax.net.ssl.KeyManagerFactory;
 import javax.net.ssl.SSLContext;
+import javax.net.ssl.SSLEngine;
 import javax.net.ssl.TrustManager;
+import javax.net.ssl.X509ExtendedKeyManager;
 import javax.security.auth.login.LoginException;
 import java.io.FileInputStream;
 import java.io.IOException;
+import java.net.Socket;
 import java.nio.charset.StandardCharsets;
 import java.security.InvalidAlgorithmParameterException;
 import java.security.InvalidKeyException;
@@ -40,8 +44,13 @@ import java.security.KeyStore;
 import java.security.KeyStoreException;
 import java.security.NoSuchAlgorithmException;
 import java.security.NoSuchProviderException;
+import java.security.Principal;
+import java.security.PrivateKey;
+import java.security.Security;
 import java.security.UnrecoverableKeyException;
+import java.security.cert.Certificate;
 import java.security.cert.CertificateException;
+import java.security.cert.X509Certificate;
 import java.util.Collections;
 import java.util.List;
 import java.util.Map;
@@ -126,25 +135,23 @@ public class UserProviderService implements ProviderService {
     public SSLContext getSSLContext(Session session, String alias) throws Exception {
         UserSession userSession = (UserSession) session;
         CloudHsmProvider provider = getProvider(userSession);
+        //Security.addProvider(provider);
 
         final KeyStore keyStore = KeyStore.getInstance(CloudHsmProvider.CLOUDHSM_KEYSTORE_TYPE, provider);
         String path = "/tmp/" + alias + ".keystore";
         final FileInputStream inputStream = new FileInputStream(path);
         keyStore.load(inputStream, password.toCharArray());
-        List<String> aliases = Collections.list(keyStore.aliases());
-        Key key = keyStore.getKey(alias + ":Private", null);
 
-        if (key == null) {
-            throw new KeyStoreException("No key found in the keystore with label " + alias);
-        }
+//        KeyManagerFactory kmf = KeyManagerFactory.getInstance(KeyManagerFactory.getDefaultAlgorithm());
+//        kmf.init(keyStore, password.toCharArray());
+//        KeyManager[] kms = kmf.getKeyManagers();
 
-        KeyManagerFactory kmf = KeyManagerFactory.getInstance(KeyManagerFactory.getDefaultAlgorithm());
-        kmf.init(keyStore, password.toCharArray());
+        KeyManager[] kms = new KeyManager[] { new KeystoreKeyManager(keyStore, alias) };
         TrustManager[] tms = new TrustManager[]{ new PermissiveTrustManager() };
 
         // NOT CLOUD HSM PROVIDER
-        SSLContext sslContext = SSLContext.getInstance("TLS");
-        sslContext.init(kmf.getKeyManagers(), tms, null);
+        SSLContext sslContext = SSLContext.getInstance("TLSv1.3");
+        sslContext.init(kms, tms, null);
 
         return sslContext;
     }

@@ -45,6 +45,8 @@ public class MTLSController {
 
         HttpResponse<String> response = httpClient.send(request, HttpResponse.BodyHandlers.ofString());
 
-        return Response.ok(response.body()).build();
+        return Response.status(response.statusCode())
+                .entity(response.body())
+                .build();
     }
 }

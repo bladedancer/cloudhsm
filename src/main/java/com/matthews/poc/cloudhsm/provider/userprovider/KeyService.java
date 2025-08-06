@@ -127,7 +127,8 @@ public class KeyService {
         final X500Name issuer = x500Name;
         final X500Name subject = x500Name;
         final Date notValidUntil = calendar.getTime();
-        final Date notValidAfter = notValidUntil;
+        calendar.add(Calendar.YEAR, 1);
+        final Date notValidAfter = calendar.getTime();
         final X509v3CertificateBuilder builder =
                 new X509v3CertificateBuilder(
                         issuer, serialNumber, notValidUntil, notValidAfter, subject, publicKeyInfo);
@@ -153,25 +154,25 @@ public class KeyService {
         KeyPairAttributesMap rsaSpec = (new KeyPairAttributesMapBuilder())
                 .withPublic(
                         (new KeyAttributesMapBuilder())
-//                                .put(KeyAttribute.TOKEN, true)
-//                                .put(KeyAttribute.ENCRYPT, true)
-//                                .put(KeyAttribute.VERIFY, true)
-//                                .put(KeyAttribute.WRAP, true)
+                                .put(KeyAttribute.TOKEN, true)
+                                .put(KeyAttribute.ENCRYPT, true)
+                                .put(KeyAttribute.VERIFY, true)
+                                .put(KeyAttribute.WRAP, true)
                                 .put(KeyAttribute.LABEL, keyLabel + ":Public")
                                 .put(KeyAttribute.MODULUS_BITS, keySizeInBits)
-//                                .put(KeyAttribute.KEY_TYPE, KeyType.RSA)
+                                .put(KeyAttribute.KEY_TYPE, KeyType.RSA)
                                 .put(KeyAttribute.PUBLIC_EXPONENT, BigInteger.valueOf(65537).toByteArray())
                                 .build())
                 .withPrivate(
                         (new KeyAttributesMapBuilder())
-//                                .put(KeyAttribute.TOKEN, true)
-//                                .put(KeyAttribute.PRIVATE, true)
-//                                .put(KeyAttribute.EXTRACTABLE, true)
-//                                .put(KeyAttribute.DECRYPT, true)
-//                                .put(KeyAttribute.SIGN, true)
-//                                .put(KeyAttribute.UNWRAP, true)
+                                .put(KeyAttribute.TOKEN, true)
+                                .put(KeyAttribute.PRIVATE, true)
+                                .put(KeyAttribute.EXTRACTABLE, true)
+                                .put(KeyAttribute.DECRYPT, true)
+                                .put(KeyAttribute.SIGN, true)
+                                .put(KeyAttribute.UNWRAP, true)
                                 .put(KeyAttribute.LABEL, keyLabel + ":Private")
-//                                .put(KeyAttribute.KEY_TYPE, KeyType.RSA)
+                                .put(KeyAttribute.KEY_TYPE, KeyType.RSA)
                                 .build())
                 .build();
 
