@@ -12,6 +12,7 @@ import java.security.KeyPair;
 import java.security.KeyStoreException;
 import java.security.NoSuchAlgorithmException;
 import java.security.NoSuchProviderException;
+import java.security.Provider;
 import java.security.UnrecoverableKeyException;
 import java.security.cert.CertificateException;
 import java.util.List;
@@ -32,6 +33,8 @@ public interface ProviderService {
     Session login(String user, String password) throws Exception;
 
     void logout(Session session) throws Exception;
+
+    String createKeystore(Session session, String alias) throws Exception;
 
     /**
      * Get the SSL Context for the given session.

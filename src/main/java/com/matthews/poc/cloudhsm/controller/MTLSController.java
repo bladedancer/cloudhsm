@@ -24,17 +24,18 @@ public class MTLSController {
     @Named("UserProviderService")
     ProviderService providerService;
 
-    @GET
-    @Path("one")
-    public Response getKey(@QueryParam("user") String user, @QueryParam("pass") String pass, @QueryParam("label") String label) throws Exception {
-//        Session session = providerService.login(user, pass);
-//        Key key = providerService.getKeyByLabel(session, label);
-//        if (key == null) {
-//            return Response.status(Response.Status.NOT_FOUND).build();
-//        }
+    @POST
+    @Path("/keystore")
+    public Response createKeyStore(@QueryParam("user") String user, @QueryParam("pass") String pass, @QueryParam("label") String label) throws Exception {
+        Session session = providerService.login(user, pass);
+        String path = providerService.createKeystore(session, label);
+        return Response.ok("Keystore created: " + path).build();
+    }
 
-//        SSLContext sslContext = providerService.getSSLContext(session, label);
-        SSLContext sslContext = providerService.getSSLContext(null, label);
+    @GET
+    public Response getKey(@QueryParam("user") String user, @QueryParam("pass") String pass, @QueryParam("label") String label) throws Exception {
+        Session session = providerService.login(user, pass);
+        SSLContext sslContext = providerService.getSSLContext(session, label);
 
         HttpClient httpClient = HttpClient.newBuilder().sslContext(sslContext).build();
 
