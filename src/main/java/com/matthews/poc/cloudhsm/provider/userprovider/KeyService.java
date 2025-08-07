@@ -19,37 +19,26 @@ import org.bouncycastle.cert.jcajce.JcaX509CertificateConverter;
 import org.bouncycastle.operator.ContentSigner;
 import org.bouncycastle.operator.OperatorCreationException;
 import org.bouncycastle.operator.jcajce.JcaContentSignerBuilder;
-import org.eclipse.microprofile.config.inject.ConfigProperty;
 
 import javax.management.openmbean.InvalidKeyException;
-import javax.net.ssl.KeyManagerFactory;
-import javax.net.ssl.SSLContext;
-import javax.net.ssl.TrustManager;
-import javax.net.ssl.X509TrustManager;
 import java.io.FileInputStream;
 import java.io.FileNotFoundException;
 import java.io.FileOutputStream;
 import java.math.BigInteger;
-import java.nio.file.Files;
-import java.nio.file.Path;
 import java.security.InvalidAlgorithmParameterException;
-import java.security.Key;
 import java.security.KeyPair;
 import java.security.KeyPairGenerator;
 import java.security.KeyStore;
 import java.security.KeyStore.PrivateKeyEntry;
-import java.security.KeyStoreException;
 import java.security.NoSuchAlgorithmException;
 import java.security.NoSuchProviderException;
 import java.security.Provider;
 import java.security.SignatureException;
 import java.security.cert.Certificate;
 import java.security.cert.CertificateException;
-import java.security.cert.X509Certificate;
+import java.security.spec.RSAKeyGenParameterSpec;
 import java.util.Calendar;
-import java.util.Collections;
 import java.util.Date;
-import java.util.List;
 import java.util.Objects;
 
 
@@ -67,7 +56,7 @@ public class KeyService {
 
         final String privateLabel = label + ":Private";
 
-        final KeyStore keyStore = KeyStore.getInstance(CloudHsmProvider.CLOUDHSM_KEYSTORE_TYPE, provider);
+        final KeyStore keyStore = KeyStore.getInstance("PKCS11", provider);
         try {
             final FileInputStream instream = new FileInputStream(keystoreFile);
             // This call to keyStore.load() will open the CloudHSM keystore file with the supplied
@@ -151,30 +140,33 @@ public class KeyService {
     }
 
     public KeyPair generateRSAKey(Provider provider, int keySizeInBits, String keyLabel) throws AddAttributeException, InvalidAlgorithmParameterException, NoSuchAlgorithmException {
-        KeyPairAttributesMap rsaSpec = (new KeyPairAttributesMapBuilder())
-                .withPublic(
-                        (new KeyAttributesMapBuilder())
-                                .put(KeyAttribute.TOKEN, true)
-                                .put(KeyAttribute.ENCRYPT, true)
-                                .put(KeyAttribute.VERIFY, true)
-                                .put(KeyAttribute.WRAP, true)
-                                .put(KeyAttribute.LABEL, keyLabel + ":Public")
-                                .put(KeyAttribute.MODULUS_BITS, keySizeInBits)
-                                .put(KeyAttribute.KEY_TYPE, KeyType.RSA)
-                                .put(KeyAttribute.PUBLIC_EXPONENT, BigInteger.valueOf(65537).toByteArray())
-                                .build())
-                .withPrivate(
-                        (new KeyAttributesMapBuilder())
-                                .put(KeyAttribute.TOKEN, true)
-                                .put(KeyAttribute.PRIVATE, true)
-                                .put(KeyAttribute.EXTRACTABLE, true)
-                                .put(KeyAttribute.DECRYPT, true)
-                                .put(KeyAttribute.SIGN, true)
-                                .put(KeyAttribute.UNWRAP, true)
-                                .put(KeyAttribute.LABEL, keyLabel + ":Private")
-                                .put(KeyAttribute.KEY_TYPE, KeyType.RSA)
-                                .build())
-                .build();
+        RSAKeyGenParameterSpec rsaSpec = new RSAKeyGenParameterSpec(2048, RSAKeyGenParameterSpec.F4);
+
+//
+//        KeyPairAttributesMap rsaSpec = (new KeyPairAttributesMapBuilder())
+//                .withPublic(
+//                        (new KeyAttributesMapBuilder())
+//                                .put(KeyAttribute.TOKEN, true)
+//                                .put(KeyAttribute.ENCRYPT, true)
+//                                .put(KeyAttribute.VERIFY, true)
+//                                .put(KeyAttribute.WRAP, true)
+//                                .put(KeyAttribute.LABEL, keyLabel + ":Public")
+//                                .put(KeyAttribute.MODULUS_BITS, keySizeInBits)
+//                                .put(KeyAttribute.KEY_TYPE, KeyType.RSA)
+//                                .put(KeyAttribute.PUBLIC_EXPONENT, BigInteger.valueOf(65537).toByteArray())
+//                                .build())
+//                .withPrivate(
+//                        (new KeyAttributesMapBuilder())
+//                                .put(KeyAttribute.TOKEN, true)
+//                                .put(KeyAttribute.PRIVATE, true)
+//                                .put(KeyAttribute.EXTRACTABLE, true)
+//                                .put(KeyAttribute.DECRYPT, true)
+//                                .put(KeyAttribute.SIGN, true)
+//                                .put(KeyAttribute.UNWRAP, true)
+//                                .put(KeyAttribute.LABEL, keyLabel + ":Private")
+//                                .put(KeyAttribute.KEY_TYPE, KeyType.RSA)
+//                                .build())
+//                .build();
 
         KeyPairGenerator generator = KeyPairGenerator.getInstance("RSA", provider);
         generator.initialize(rsaSpec);

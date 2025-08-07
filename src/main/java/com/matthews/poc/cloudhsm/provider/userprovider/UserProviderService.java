@@ -1,6 +1,5 @@
 package com.matthews.poc.cloudhsm.provider.userprovider;
 
-import com.amazonaws.cloudhsm.jce.jni.UserType;
 import com.amazonaws.cloudhsm.jce.jni.exception.AddAttributeException;
 import com.amazonaws.cloudhsm.jce.jni.exception.ProviderInitializationException;
 import com.amazonaws.cloudhsm.jce.provider.CloudHsmCluster;
@@ -13,7 +12,6 @@ import com.amazonaws.cloudhsm.jce.provider.attributes.KeyAttribute;
 import com.amazonaws.cloudhsm.jce.provider.attributes.KeyAttributesMap;
 import com.matthews.poc.cloudhsm.api.ProviderService;
 import com.matthews.poc.cloudhsm.api.Session;
-import com.matthews.poc.cloudhsm.controller.ApplicationCallbackHandler;
 import io.quarkus.runtime.Startup;
 import jakarta.annotation.PostConstruct;
 import jakarta.annotation.PreDestroy;
@@ -26,16 +24,16 @@ import org.eclipse.microprofile.config.inject.ConfigProperty;
 import javax.crypto.KeyGenerator;
 import javax.crypto.Mac;
 import javax.net.ssl.KeyManager;
-import javax.net.ssl.KeyManagerFactory;
 import javax.net.ssl.SSLContext;
-import javax.net.ssl.SSLEngine;
 import javax.net.ssl.TrustManager;
-import javax.net.ssl.X509ExtendedKeyManager;
+import javax.security.auth.callback.Callback;
 import javax.security.auth.login.LoginException;
 import java.io.FileInputStream;
 import java.io.IOException;
-import java.net.Socket;
 import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.security.AuthProvider;
 import java.security.InvalidAlgorithmParameterException;
 import java.security.InvalidKeyException;
 import java.security.Key;
@@ -44,13 +42,10 @@ import java.security.KeyStore;
 import java.security.KeyStoreException;
 import java.security.NoSuchAlgorithmException;
 import java.security.NoSuchProviderException;
-import java.security.Principal;
-import java.security.PrivateKey;
+import java.security.Provider;
 import java.security.Security;
 import java.security.UnrecoverableKeyException;
-import java.security.cert.Certificate;
 import java.security.cert.CertificateException;
-import java.security.cert.X509Certificate;
 import java.util.Collections;
 import java.util.List;
 import java.util.Map;
@@ -61,7 +56,7 @@ import java.util.concurrent.ConcurrentHashMap;
 @Startup
 @Slf4j
 public class UserProviderService implements ProviderService {
-    private final Map<String, CloudHsmProvider> userProviders = new ConcurrentHashMap<>();
+    private final Map<String, AuthProvider> userProviders = new ConcurrentHashMap<>();
 
     @Inject
     private KeyService keyService;
@@ -106,9 +101,26 @@ public class UserProviderService implements ProviderService {
             return session;
         }
 
-        CloudHsmProvider provider = createProvider(clusterId, cafile, ip, port);
-        ApplicationCallbackHandler loginHandler = new ApplicationCallbackHandler(UserType.CRYPTO_USER, user, password);
-        provider.login(null, loginHandler);
+        // Keying the provider by user name just as example.....
+        String pkcs11Config = String.format("name=CloudHSM_%s\nlibrary=/opt/cloudhsm/lib/libcloudhsm_pkcs11.so", user);
+        Path tempFile = Files.createTempFile("pkcs11Config", ".conf");
+        Files.writeString(tempFile, pkcs11Config);
+
+        AuthProvider provider = (AuthProvider) Security.getProvider("SunPKCS11").configure(tempFile.toString());
+
+        provider.login(null, callbacks -> {
+            for (Callback callback : callbacks) {
+                if (callback instanceof javax.security.auth.callback.PasswordCallback) {
+                    ((javax.security.auth.callback.PasswordCallback) callback).setPassword(String.format("%s:%s", user, password).toCharArray());
+                    break;
+                }
+            }
+        });
+
+        Security.addProvider(provider);
+//        CloudHsmProvider provider = createProvider(clusterId, cafile, ip, port);
+//        ApplicationCallbackHandler loginHandler = new ApplicationCallbackHandler(UserType.CRYPTO_USER, user, password);
+//        provider.login(null, loginHandler);
 
         userProviders.put(session.key(), provider);
         log.info("User {} logged in successfully.", user);
@@ -118,7 +130,7 @@ public class UserProviderService implements ProviderService {
     public void logout(Session session) {
         UserSession userSession = (UserSession) session;
 
-        CloudHsmProvider provider = userProviders.remove(userSession.key());
+        AuthProvider provider = userProviders.remove(userSession.key());
         if (provider != null) {
             try {
                 provider.logout();
@@ -134,10 +146,10 @@ public class UserProviderService implements ProviderService {
     @Override
     public SSLContext getSSLContext(Session session, String alias) throws Exception {
         UserSession userSession = (UserSession) session;
-        CloudHsmProvider provider = getProvider(userSession);
-        //Security.addProvider(provider);
+        Provider provider = getProvider(userSession);
 
-        final KeyStore keyStore = KeyStore.getInstance(CloudHsmProvider.CLOUDHSM_KEYSTORE_TYPE, provider);
+        //final KeyStore keyStore = KeyStore.getInstance(CloudHsmProvider.CLOUDHSM_KEYSTORE_TYPE, provider);
+        final KeyStore keyStore = KeyStore.getInstance("PKCS11", provider);
         String path = "/tmp/" + alias + ".keystore";
         final FileInputStream inputStream = new FileInputStream(path);
         keyStore.load(inputStream, password.toCharArray());
@@ -158,7 +170,7 @@ public class UserProviderService implements ProviderService {
 
     public String createKeystore(Session session, String alias) throws Exception {
         UserSession userSession = (UserSession) session;
-        CloudHsmProvider provider = getProvider(userSession);
+        Provider provider = getProvider(userSession);
         String path = "/tmp/" + alias + ".keystore";
         keyService.createKeystore(provider, path, password, alias);
         return path;
@@ -166,14 +178,14 @@ public class UserProviderService implements ProviderService {
 
     public KeyPair generateRSAKey(Session session, int keySizeInBits, String keyLabel) throws AddAttributeException, InvalidAlgorithmParameterException, NoSuchAlgorithmException {
         UserSession userSession = (UserSession) session;
-        CloudHsmProvider provider = getProvider(userSession);
+        Provider provider = getProvider(userSession);
         return keyService.generateRSAKey(provider, keySizeInBits, keyLabel);
     }
 
 
     public Key generateAESKey(Session session, int keySizeInBits, String keyLabel) throws IllegalStateException, AddAttributeException, InvalidAlgorithmParameterException, NoSuchAlgorithmException {
         UserSession userSession = (UserSession) session;
-        CloudHsmProvider provider = getProvider(userSession);
+        Provider provider = getProvider(userSession);
 
         KeyAttributesMap aesSpec = new KeyAttributesMap();
         aesSpec.put(KeyAttribute.LABEL, keyLabel);
@@ -190,7 +202,7 @@ public class UserProviderService implements ProviderService {
             throws InvalidAlgorithmParameterException, NoSuchAlgorithmException,
             NoSuchProviderException, AddAttributeException {
         UserSession userSession = (UserSession) session;
-        CloudHsmProvider provider = getProvider(userSession);
+        Provider provider = getProvider(userSession);
 
         // Create an Aes keygen Algorithm parameter spec using KeyAttributesMap
         final KeyAttributesMap aesSpec = new KeyAttributesMap();
@@ -207,7 +219,7 @@ public class UserProviderService implements ProviderService {
     public List<String> listKeys(Session session)
             throws Exception {
         UserSession userSession = (UserSession) session;
-        CloudHsmProvider provider = getProvider(userSession);
+        Provider provider = getProvider(userSession);
 
         final KeyStore keyStore = KeyStore.getInstance(CloudHsmProvider.CLOUDHSM_KEYSTORE_TYPE, provider);
         keyStore.load(null, null);
@@ -224,7 +236,7 @@ public class UserProviderService implements ProviderService {
             throws CertificateException, IOException, NoSuchAlgorithmException, KeyStoreException,
             UnrecoverableKeyException {
         UserSession userSession = (UserSession) session;
-        CloudHsmProvider provider = getProvider(userSession);
+        Provider provider = getProvider(userSession);
 
         final KeyStore keyStore = KeyStore.getInstance(CloudHsmProvider.CLOUDHSM_KEYSTORE_TYPE, provider);
         keyStore.load(null, null);
@@ -235,7 +247,7 @@ public class UserProviderService implements ProviderService {
     public String signPayload(Session session, String payload, String keyLabel, String algorithm) throws CertificateException, IOException, NoSuchAlgorithmException, KeyStoreException,
             UnrecoverableKeyException, InvalidKeyException, NoSuchProviderException {
         UserSession userSession = (UserSession) session;
-        CloudHsmProvider provider = getProvider(userSession);
+        Provider provider = getProvider(userSession);
 
         byte[] data = payload.getBytes(StandardCharsets.UTF_8);
         Mac mac = Mac.getInstance(algorithm, provider);
@@ -286,8 +298,8 @@ public class UserProviderService implements ProviderService {
         return new CloudHsmProvider(config);
     }
 
-    private CloudHsmProvider getProvider(UserSession session) {
-        CloudHsmProvider provider = userProviders.get(session.key());
+    private AuthProvider getProvider(UserSession session) {
+        AuthProvider provider = userProviders.get(session.key());
         if (provider == null) {
             throw new IllegalStateException("User " + session.user() + " is not logged in.");
         }
