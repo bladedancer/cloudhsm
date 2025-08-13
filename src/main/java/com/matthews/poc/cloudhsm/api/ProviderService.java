@@ -8,11 +8,9 @@ import java.io.IOException;
 import java.security.InvalidAlgorithmParameterException;
 import java.security.InvalidKeyException;
 import java.security.Key;
-import java.security.KeyPair;
 import java.security.KeyStoreException;
 import java.security.NoSuchAlgorithmException;
 import java.security.NoSuchProviderException;
-import java.security.Provider;
 import java.security.UnrecoverableKeyException;
 import java.security.cert.CertificateException;
 import java.util.List;
@@ -34,8 +32,6 @@ public interface ProviderService {
 
     void logout(Session session) throws Exception;
 
-    String createKeystore(Session session, String alias) throws Exception;
-
     /**
      * Get the SSL Context for the given session.
      * @param session
@@ -43,17 +39,6 @@ public interface ProviderService {
      * @throws Exception
      */
     SSLContext getSSLContext(Session session, String alias) throws Exception;
-
-    /**
-     * Generate an RSA Key pair.
-     *
-     * @param session
-     * @param keySizeInBits
-     * @param keyLabel
-     * @return
-     * @throws Exception
-     */
-    KeyPair generateRSAKey(Session session, int keySizeInBits, String keyLabel) throws Exception;
 
     /**
      * Generates an AES key with the specified size and label.

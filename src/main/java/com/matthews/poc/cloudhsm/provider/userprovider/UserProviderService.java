@@ -13,10 +13,10 @@ import com.amazonaws.cloudhsm.jce.provider.attributes.KeyAttributesMap;
 import com.matthews.poc.cloudhsm.api.ProviderService;
 import com.matthews.poc.cloudhsm.api.Session;
 import io.quarkus.runtime.Startup;
+import io.quarkus.runtime.util.StringUtil;
 import jakarta.annotation.PostConstruct;
 import jakarta.annotation.PreDestroy;
 import jakarta.enterprise.context.ApplicationScoped;
-import jakarta.inject.Inject;
 import jakarta.inject.Named;
 import lombok.extern.slf4j.Slf4j;
 import org.eclipse.microprofile.config.inject.ConfigProperty;
@@ -37,7 +37,6 @@ import java.security.AuthProvider;
 import java.security.InvalidAlgorithmParameterException;
 import java.security.InvalidKeyException;
 import java.security.Key;
-import java.security.KeyPair;
 import java.security.KeyStore;
 import java.security.KeyStoreException;
 import java.security.NoSuchAlgorithmException;
@@ -58,9 +57,6 @@ import java.util.concurrent.ConcurrentHashMap;
 public class UserProviderService implements ProviderService {
     private final Map<String, AuthProvider> userProviders = new ConcurrentHashMap<>();
 
-    @Inject
-    private KeyService keyService;
-
     @ConfigProperty(name = "cloudhsm.clusterid")
     String clusterId;
 
@@ -73,8 +69,11 @@ public class UserProviderService implements ProviderService {
     @ConfigProperty(name = "cloudhsm.port")
     Integer port;
 
-    @ConfigProperty(name = "cloudhsm.keystore.password")
-    private String password;
+    @ConfigProperty(name = "cloudhsm.user")
+    String defaultUser;
+
+    @ConfigProperty(name = "cloudhsm.password")
+    String defaultPassword;
 
     @PostConstruct
     public void init() {
@@ -102,7 +101,10 @@ public class UserProviderService implements ProviderService {
         }
 
         // Keying the provider by user name just as example.....
-        String pkcs11Config = String.format("name=CloudHSM_%s\nlibrary=/opt/cloudhsm/lib/libcloudhsm_pkcs11.so", user);
+        String pkcs11Config = String.format("""
+            name=CloudHSM_%s
+            library=/opt/cloudhsm/lib/libcloudhsm_pkcs11.so
+            """, user);
         Path tempFile = Files.createTempFile("pkcs11Config", ".conf");
         Files.writeString(tempFile, pkcs11Config);
 
@@ -110,17 +112,17 @@ public class UserProviderService implements ProviderService {
 
         provider.login(null, callbacks -> {
             for (Callback callback : callbacks) {
-                if (callback instanceof javax.security.auth.callback.PasswordCallback) {
-                    ((javax.security.auth.callback.PasswordCallback) callback).setPassword(String.format("%s:%s", user, password).toCharArray());
+                if (callback instanceof javax.security.auth.callback.PasswordCallback passwordCallback) {
+                    passwordCallback.setPassword(
+                            String.format("%s:%s",
+                                    StringUtil.isNullOrEmpty(user) ? defaultUser : user,
+                                    StringUtil.isNullOrEmpty(password) ? defaultPassword : password).toCharArray());
                     break;
                 }
             }
         });
 
         Security.addProvider(provider);
-//        CloudHsmProvider provider = createProvider(clusterId, cafile, ip, port);
-//        ApplicationCallbackHandler loginHandler = new ApplicationCallbackHandler(UserType.CRYPTO_USER, user, password);
-//        provider.login(null, loginHandler);
 
         userProviders.put(session.key(), provider);
         log.info("User {} logged in successfully.", user);
@@ -148,40 +150,14 @@ public class UserProviderService implements ProviderService {
         UserSession userSession = (UserSession) session;
         Provider provider = getProvider(userSession);
 
-        //final KeyStore keyStore = KeyStore.getInstance(CloudHsmProvider.CLOUDHSM_KEYSTORE_TYPE, provider);
-        final KeyStore keyStore = KeyStore.getInstance("PKCS11", provider);
-        String path = "/tmp/" + alias + ".keystore";
-        final FileInputStream inputStream = new FileInputStream(path);
-        keyStore.load(inputStream, password.toCharArray());
-
-//        KeyManagerFactory kmf = KeyManagerFactory.getInstance(KeyManagerFactory.getDefaultAlgorithm());
-//        kmf.init(keyStore, password.toCharArray());
-//        KeyManager[] kms = kmf.getKeyManagers();
-
-        KeyManager[] kms = new KeyManager[] { new KeystoreKeyManager(keyStore, alias) };
+        KeyManager[] kms = new KeyManager[] { new MTLSKeyManager(provider, alias) };
         TrustManager[] tms = new TrustManager[]{ new PermissiveTrustManager() };
 
-        // NOT CLOUD HSM PROVIDER
         SSLContext sslContext = SSLContext.getInstance("TLSv1.3");
         sslContext.init(kms, tms, null);
 
         return sslContext;
     }
-
-    public String createKeystore(Session session, String alias) throws Exception {
-        UserSession userSession = (UserSession) session;
-        Provider provider = getProvider(userSession);
-        String path = "/tmp/" + alias + ".keystore";
-        keyService.createKeystore(provider, path, password, alias);
-        return path;
-    }
-
-    public KeyPair generateRSAKey(Session session, int keySizeInBits, String keyLabel) throws AddAttributeException, InvalidAlgorithmParameterException, NoSuchAlgorithmException {
-        UserSession userSession = (UserSession) session;
-        Provider provider = getProvider(userSession);
-        return keyService.generateRSAKey(provider, keySizeInBits, keyLabel);
-    }
-
 
     public Key generateAESKey(Session session, int keySizeInBits, String keyLabel) throws IllegalStateException, AddAttributeException, InvalidAlgorithmParameterException, NoSuchAlgorithmException {
         UserSession userSession = (UserSession) session;
