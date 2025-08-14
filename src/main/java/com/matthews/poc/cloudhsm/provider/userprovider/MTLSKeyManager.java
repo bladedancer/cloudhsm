@@ -1,99 +1,99 @@
 package com.matthews.poc.cloudhsm.provider.userprovider;
 
 import lombok.SneakyThrows;
-import org.bouncycastle.util.io.pem.PemObject;
-import org.bouncycastle.util.io.pem.PemReader;
 
 import javax.net.ssl.SSLEngine;
 import javax.net.ssl.X509ExtendedKeyManager;
-import java.io.FileReader;
 import java.net.Socket;
-import java.nio.file.Path;
-import java.security.KeyFactory;
+import java.security.KeyStore;
 import java.security.Principal;
 import java.security.PrivateKey;
 import java.security.Provider;
+import java.security.cert.Certificate;
 import java.security.cert.X509Certificate;
-import java.security.spec.PKCS8EncodedKeySpec;
-import java.util.ArrayList;
-import java.util.List;
 
 public class MTLSKeyManager extends X509ExtendedKeyManager {
-    private final String privateKeyAlias;
-    private final X509Certificate[] chain;
-    private final PrivateKey key;
+    private String alias;
+    private X509Certificate[] chain;
+    private PrivateKey key;
 
-    public MTLSKeyManager(Provider provider, String privateKeyAlias) {
-        this.key = loadKey(provider, privateKeyAlias);
-        this.chain = loadCertChain(privateKeyAlias);
-        this.privateKeyAlias = privateKeyAlias;
+    public MTLSKeyManager(Provider provider, String alias) {
+        loadKey(provider, alias);
     }
 
     @SneakyThrows
-    private PrivateKey loadKey(Provider provider, String alias) {
-        try (PemReader reader = new PemReader(new FileReader(Path.of("certs", alias + ".key").toFile()))) {
-            PemObject pemObject = reader.readPemObject();
-            if (pemObject == null) {
-                throw new RuntimeException("No PEM object found in key file: " + alias + ".key");
-            }
+    private void loadKey(Provider provider, String alias) {
+        KeyStore keyStore = KeyStore.getInstance("PKCS11", provider);
+        keyStore.load(null, null);
+        String privateKeyLabel = alias + ":Private";
 
-            KeyFactory keyFactory = KeyFactory.getInstance("RSA", provider);
-            PKCS8EncodedKeySpec keySpec = new PKCS8EncodedKeySpec(pemObject.getContent());
-            return keyFactory.generatePrivate(keySpec);
-        } catch (Exception e) {
-            throw new RuntimeException("Failed to load CloudHSM key reference from file: " + alias + ".key - " + e.getMessage(), e);
+        key = (PrivateKey) keyStore.getKey(privateKeyLabel, null);
+        if (key != null) {
+            this.alias = privateKeyLabel;
+            chain = loadCertChain(keyStore, privateKeyLabel);
+        }
+
+        if (key == null) {
+            key = (PrivateKey) keyStore.getKey(alias, null);
+            if (key != null) {
+                this.alias = alias;
+                chain = loadCertChain(keyStore, alias);
+            }
+        }
+
+        if (key == null) {
+            // List available aliases for debugging
+            java.util.Enumeration<String> aliases = keyStore.aliases();
+            StringBuilder availableAliases = new StringBuilder();
+            while (aliases.hasMoreElements()) {
+                availableAliases.append(aliases.nextElement()).append(", ");
+            }
+            throw new RuntimeException("Private key not found in CloudHSM. Tried: " + privateKeyLabel + " and " + alias +
+                    ". Available aliases: " + availableAliases.toString());
         }
     }
 
     @SneakyThrows
-    private X509Certificate[] loadCertChain(String alias) {
-        try (PemReader reader = new PemReader(new FileReader(Path.of("certs", alias + ".pem").toFile()))) {
-            List<X509Certificate> certificates = new ArrayList<>();
-            PemObject pemObject;
-            while ((pemObject = reader.readPemObject()) != null) {
-                if ("CERTIFICATE".equals(pemObject.getType())) {
-                    java.security.cert.CertificateFactory cf = java.security.cert.CertificateFactory.getInstance("X.509");
-                    X509Certificate cert = (X509Certificate) cf.generateCertificate(
-                            new java.io.ByteArrayInputStream(pemObject.getContent())
-                    );
-                    certificates.add(cert);
-                }
-            }
-
-            return certificates.toArray(new X509Certificate[0]);
+    private X509Certificate[] loadCertChain(KeyStore keyStore, String alias) {
+        Certificate[] certs = keyStore.getCertificateChain(alias);
+        if (certs != null && certs.length > 0 && certs[0] instanceof X509Certificate && !(certs instanceof X509Certificate[])) {
+            Certificate[] tmp = new X509Certificate[certs.length];
+            System.arraycopy(certs, 0, tmp, 0, certs.length);
+            certs = tmp;
         }
+        return (X509Certificate[]) certs;
     }
 
     @Override
     public String[] getClientAliases(String keyType, Principal[] issuers) {
-        return new String[]{ privateKeyAlias };
+        return new String[]{alias};
     }
 
     @Override
     public String chooseClientAlias(String[] keyType, Principal[] issuers, Socket socket) {
-        return privateKeyAlias;
+        return alias;
     }
 
     @Override
     public String chooseEngineClientAlias(String[] keyType,
                                           Principal[] issuers, SSLEngine engine) {
-        return privateKeyAlias;
+        return alias;
     }
 
     @Override
     public String chooseEngineServerAlias(String keyType,
                                           Principal[] issuers, SSLEngine engine) {
-        return privateKeyAlias;
+        return alias;
     }
 
     @Override
     public String[] getServerAliases(String keyType, Principal[] issuers) {
-        return new String[]{ privateKeyAlias };
+        return new String[]{alias};
     }
 
     @Override
     public String chooseServerAlias(String keyType, Principal[] issuers, Socket socket) {
-        return privateKeyAlias;
+        return alias;
     }
 
     @Override
