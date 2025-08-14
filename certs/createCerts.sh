@@ -11,7 +11,7 @@ fi
 HSM_USER="${HSM_USER:-}"
 HSM_PASSWORD="${HSM_PASSWORD:-}"
 LABEL="${LABEL:-}"
-KEYSIZE_BITS="${KEYSIZE_BITS:-2048}"
+KEYSIZE_BITS="${KEYSIZE_BITS:-4096}"
 
 # Usage function
 usage() {
@@ -120,15 +120,22 @@ echo "Generating certificates..."
 
 
 # Create the key pair in CloudHSM
+CLOUDHSM_CLI_PATH=$(which cloudhsm-cli)
+CLOUDHSM_LIB_PATH=$(dirname "$(dirname "$CLOUDHSM_CLI_PATH")")/lib
+CLOUDHSM_PKCS11_MODULE="${CLOUDHSM_LIB_PATH}/libcloudhsm_pkcs11.so"
 export CLOUDHSM_PIN="${HSM_USER}:${HSM_PASSWORD}"
 export CLOUDHSM_ROLE="crypto-user"
+ID=`date +%s`
+
 if [ "$(cloudhsm-cli key list --filter="attr.label=${LABEL}:Private" | jq -r '.data.total_key_count')" == "0" ]; then
-  echo "No keys found with label '${LABEL:Private}'. Generating new key pair..."
+  echo "No keys found with label '${LABEL}:Private'. Generating new key pair..."
   cloudhsm-cli key generate-asymmetric-pair rsa --public-label "${LABEL}:Public" --private-label "${LABEL}:Private" \
-      --public-attributes verify=true --private-attributes sign=true \
+      --public-attributes encrypt=true verify=true wrap=true \
+      --private-attributes private=true extractable=true decrypt=true sign=true unwrap=true id=0x${ID} \
       --modulus-size-bits ${KEYSIZE_BITS} --public-exponent 65537
 else
-  echo "Key pair with label '${LABEL}:Private' already exists. Skipping key generation."
+  ID=$(cloudhsm-cli key list -v --filter="attr.label=${LABEL}:Private" | jq -r '.data.matched_keys[0].attributes.id' | cut -c 3-)
+  echo "Key pair with label '${LABEL}:Private' already exists. Skipping key generation. ID: $ID"
 fi
 
 echo "Exporting keys..."
@@ -138,4 +145,9 @@ cloudhsm-cli key generate-file --encoding pem --path ${LABEL}.pub --filter attr.
 echo "Creating a cert using the public key..."
 openssl req -engine cloudhsm -x509 -key ${LABEL}.key -out ${LABEL}.pem -sha256 -days 365 -nodes -subj "/CN=${LABEL}"
 
-echo "Certificate generation completed."
+echo "Importing the certificate into CloudHSM..."
+pkcs11-tool --module ${CLOUDHSM_PKCS11_MODULE} --pin "${CLOUDHSM_PIN}" --write-object ./${LABEL}.pem --type cert --id $ID --label ${LABEL}
+
+# Clean up
+rm -f ${LABEL}.key ${LABEL}.pub
+printf "Certificate generation completed.\n\tID:\t$ID\n\tLabel:\t$LABEL"
