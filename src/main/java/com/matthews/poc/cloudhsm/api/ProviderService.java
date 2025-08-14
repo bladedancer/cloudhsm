@@ -1,11 +1,7 @@
 package com.matthews.poc.cloudhsm.api;
 
-import com.amazonaws.cloudhsm.jce.jni.exception.AddAttributeException;
-import com.amazonaws.cloudhsm.jce.provider.attributes.KeyAttributesMap;
-
 import javax.net.ssl.SSLContext;
 import java.io.IOException;
-import java.security.InvalidAlgorithmParameterException;
 import java.security.InvalidKeyException;
 import java.security.Key;
 import java.security.KeyStoreException;
@@ -39,39 +35,6 @@ public interface ProviderService {
      * @throws Exception
      */
     SSLContext getSSLContext(Session session, String alias) throws Exception;
-
-    /**
-     * Generates an AES key with the specified size and label.
-     *
-     * @param keySizeInBits The size of the AES key in bits.
-     * @param keyLabel The label to associate with the generated key.
-     * @return The generated AES key.
-     * @throws InvalidAlgorithmParameterException If the algorithm parameters are invalid.
-     * @throws NoSuchAlgorithmException If the AES algorithm is not available.
-     * @throws NoSuchProviderException If the provider is not available.
-     * @throws AddAttributeException If there is an error adding attributes to the key.
-     */
-    Key generateAESKey(Session session, int keySizeInBits, String keyLabel)
-            throws InvalidAlgorithmParameterException, NoSuchAlgorithmException,
-            NoSuchProviderException, AddAttributeException, IllegalStateException;
-
-    /**
-     * Generates an AES key with the specified size, label, and additional attributes.
-     *
-     * @param keySizeInBits The size of the AES key in bits.
-     * @param keyLabel The label to associate with the generated key.
-     * @param aesSpecKeyAttributes Additional attributes for the key.
-     * @return The generated AES key.
-     * @throws InvalidAlgorithmParameterException If the algorithm parameters are invalid.
-     * @throws NoSuchAlgorithmException If the AES algorithm is not available.
-     * @throws NoSuchProviderException If the provider is not available.
-     * @throws AddAttributeException If there is an error adding attributes to the key.
-     */
-    Key generateAESKey(
-            Session session,
-            int keySizeInBits, String keyLabel, KeyAttributesMap aesSpecKeyAttributes)
-            throws InvalidAlgorithmParameterException, NoSuchAlgorithmException,
-            NoSuchProviderException, AddAttributeException;
 
     /**
      * Lists all keys available in the HSM.

@@ -5,7 +5,6 @@ import com.matthews.poc.cloudhsm.api.Session;
 import jakarta.inject.Inject;
 import jakarta.inject.Named;
 import jakarta.ws.rs.GET;
-import jakarta.ws.rs.POST;
 import jakarta.ws.rs.Path;
 import jakarta.ws.rs.PathParam;
 import jakarta.ws.rs.QueryParam;
@@ -35,16 +34,5 @@ public class KeyController {
         }
 
         return Response.ok(key).build();
-    }
-
-    @POST
-    @Path("{label}")
-    public Response createKey(@PathParam("label") String label, @QueryParam("user") String user, @QueryParam("pass") String pass) throws Exception {
-        Session session = providerService.login(user, pass);
-        Key key = providerService.generateAESKey(session, 256, label);
-        if (key == null) {
-            return Response.status(Response.Status.BAD_REQUEST).build();
-        }
-        return Response.ok(key.getAlgorithm()).build();
     }
 }

@@ -2,7 +2,6 @@ package com.matthews.poc.cloudhsm.controller;
 
 import com.matthews.poc.cloudhsm.api.ProviderService;
 import com.matthews.poc.cloudhsm.api.Session;
-import jakarta.annotation.PostConstruct;
 import jakarta.inject.Inject;
 import jakarta.inject.Named;
 import jakarta.validation.constraints.NotBlank;
@@ -13,10 +12,6 @@ import jakarta.ws.rs.Path;
 import jakarta.ws.rs.QueryParam;
 import jakarta.ws.rs.core.Response;
 import lombok.extern.slf4j.Slf4j;
-
-import java.io.IOException;
-import java.security.*;
-import java.security.cert.CertificateException;
 
 @Path("/api/crypto")
 @Slf4j

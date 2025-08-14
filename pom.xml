@@ -17,13 +17,6 @@
 
     <dependencyManagement>
         <dependencies>
-<!--            <dependency>-->
-<!--                <groupId>software.amazon.awssdk</groupId>-->
-<!--                <artifactId>bom</artifactId>-->
-<!--                <version>2.31.55</version>-->
-<!--                <type>pom</type>-->
-<!--                <scope>import</scope>-->
-<!--            </dependency>-->
             <dependency>
                 <groupId>io.quarkus.platform</groupId>
                 <artifactId>quarkus-bom</artifactId>
@@ -35,14 +28,6 @@
     </dependencyManagement>
 
     <dependencies>
-        <!-- no idea if this is available in maven central -->
-        <dependency>
-            <groupId>com.amazonws.cloudhsm.jce.provider</groupId>
-            <artifactId>cloudhsm-jce</artifactId>
-            <version>5.16.0</version>
-            <scope>system</scope>
-            <systemPath>${project.basedir}/jce/cloudhsm-jce-5.16.0.jar</systemPath>
-        </dependency>
         <!-- Bouncy Castle, for generating a certificate to sign. -->
         <dependency>
             <groupId>org.bouncycastle</groupId>

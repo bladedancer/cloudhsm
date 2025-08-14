@@ -27,11 +27,11 @@ public class MTLSKeyManager extends X509ExtendedKeyManager {
         keyStore.load(null, null);
         String privateKeyLabel = alias + ":Private";
 
-        key = (PrivateKey) keyStore.getKey(privateKeyLabel, null);
-        if (key != null) {
-            this.alias = privateKeyLabel;
-            chain = loadCertChain(keyStore, privateKeyLabel);
-        }
+//        key = (PrivateKey) keyStore.getKey(privateKeyLabel, null);
+//        if (key != null) {
+//            this.alias = privateKeyLabel;
+//            chain = loadCertChain(keyStore, privateKeyLabel);
+//        }
 
         if (key == null) {
             key = (PrivateKey) keyStore.getKey(alias, null);
