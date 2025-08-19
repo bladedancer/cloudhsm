@@ -88,13 +88,11 @@ public class UserProviderService implements ProviderService {
 
         // Keying the provider by user name just as example.....
         String pkcs11Config = String.format("""
+            --
             name=CloudHSM_%s
             library=/opt/cloudhsm/lib/libcloudhsm_pkcs11.so
             """, session.user());
-        Path tempFile = Files.createTempFile("pkcs11Config", ".conf");
-        Files.writeString(tempFile, pkcs11Config);
-
-        AuthProvider provider = (AuthProvider) Security.getProvider("SunPKCS11").configure(tempFile.toString());
+        AuthProvider provider = (AuthProvider) Security.getProvider("SunPKCS11").configure(pkcs11Config);
 
         provider.login(null, callbacks -> {
             for (Callback callback : callbacks) {
